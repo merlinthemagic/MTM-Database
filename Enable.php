@@ -7,7 +7,7 @@ if (defined("MTM_DATABASE_BASE_PATH") === false) {
 		if (class_exists($className) === false) {
 			$cPath		= array_values(array_filter(explode("\\", $className)));
 			if (array_shift($cPath) == "MTM") {
-				if (array_shift($cPath) == "Async") {
+				if (array_shift($cPath) == "Database") {
 					$filePath	= MTM_DATABASE_BASE_PATH . implode(DIRECTORY_SEPARATOR, $cPath) . ".php";
 					if (is_readable($filePath) === true) {
 						require_once $filePath;
