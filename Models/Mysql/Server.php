@@ -12,7 +12,32 @@ class Server
 	
 	protected $_debug=false;
 	protected $_debugData=array();
+	protected $_exRewrites=array();
 	
+	public function __construct()
+	{
+		//default exception rewrites
+		$this->setExceptionRewrite(1062, "Duplicate Entry", 18775);//duplicate in unique index
+	}
+	public function setExceptionRewrite($dbCode, $exMsg="", $exCode=0)
+	{
+		//allows thrown exceptions to be rewritten to fit your needs
+		if (is_int($dbCode) === false) {
+			throw new \Exception("Invalid database error code");
+		} elseif (is_string($exMsg) === false) {
+			throw new \Exception("Invalid exception mesage");
+		} elseif (is_int($exCode) === false) {
+			throw new \Exception("Invalid exception code");
+		} elseif (array_key_exists($dbCode, $this->_exRewrites) === false) {
+			$this->_exRewrites[$dbCode]	= new \stdClass();
+		}
+		$obj			= $this->_exRewrites[$dbCode];
+		$obj->dbCode	= $dbCode;
+		$obj->exMsg		= $exMsg;
+		$obj->exCode	= $exCode;
+
+		return $this;
+	}
 	public function getNewClient($dbName)
 	{
 		$rObj	= new \MTM\Database\Models\Mysql\Client();
@@ -60,7 +85,20 @@ class Server
 			//quash the original exception and issue a generic one
 			//otherwise the exception might leak data database might bubble
 			//e.g. SQLSTATE[HY000] [1044] Access denied for user 'XXXXX'@'%' to database 'XXXXX' - Code: 1044
-			throw new \Exception("MAC-DB");
+			//set the error code so error handlers can still understand what is going on, the dangerous part is in the message
+			//if you dont want to leak the code, rewrite it
+			$dbCode	= "none";
+			if (strpos($e->getMessage(), "violation: 1062 Duplicate entry") !== false) {
+				$dbCode	= 1062;
+			}
+			if (array_key_exists($dbCode, $this->_exRewrites) === true) {
+				$rwObj	= $this->_exRewrites[$dbCode];
+				throw new \Exception($rwObj->exMsg, $rwObj->exCode);
+			} else {
+				//default
+				throw new \Exception("MAC-DB", 0);
+			}
+
 		} else {
 			$this->addDebugData($e->getMessage() . " - " .$e->getCode());
 			throw $e;
@@ -155,6 +193,19 @@ class Server
 	    } catch (\Exception $e) {
 	        $this->exceptionHandler($e);
 	    }
+	}
+	public function terminateClient($connObj)
+	{
+		if (array_key_exists($connObj->getUUID(), $this->_adaptors) === true) {
+			$adaptor	= $this->getAdaptor($connObj);
+			unset($this->_adaptors[$connObj->getUUID()]);
+			try {
+				$adaptor->query("KILL CONNECTION_ID()");
+			} catch (\Exception $e) {
+				//nothing, its just an interupted execution (pid went away)
+			}
+		}
+		return $this;
 	}
 	public function getMaxPacket($connObj)
 	{

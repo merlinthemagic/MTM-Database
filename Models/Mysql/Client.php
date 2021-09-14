@@ -7,6 +7,10 @@ class Client
 	protected $_parentObj=null;
 	protected $_connUUID=null;
 	
+	public function __destruct()
+	{
+		$this->terminate();
+	}
 	public function setParent($dbObj)
 	{
 		$this->_parentObj	= $dbObj;
@@ -47,6 +51,25 @@ class Client
 	{
 		return $this->getParent()->update($this, $tableName, $row, $query, $qPs);
 	}
+	public function inStatement($inVals=array(), $qPs=array())
+	{
+		//not finished
+		//helper for IN () statements
+// 		$wh		= array();
+// 		foreach ($inVals as $inVal) {
+// 			$nv			= str_replace(" ", "_", ":inVal".$inVal);
+// 			$where[]	= $nv;
+// 			$qPs[$nv]	= $inVal;
+// 		}
+// 		$rObj			= new \stdClass();
+// 		$rObj->where	= implode(", ", $where);
+// 		$rObj->qPs		= $qPs;
+// 		return $rObj;
+		//USE:
+		//$rObj		= $dbConn->inStatement(array(1,2,3,4,5));
+		//$dbConn->update("tableName", array("attr"=> $value), "id IN ( $rObj->where )", $rObj->qPs);
+		
+	}
 	public function delete($tableName, $query=null, $qPs=null)
 	{
 		return $this->getParent()->delete($this, $tableName, $query, $qPs);
@@ -61,5 +84,11 @@ class Client
 			$this->_connUUID		= uniqid("", true);
 		}
 		return $this->_connUUID;
+	}
+	public function terminate()
+	{
+		if (is_object($this->_parentObj) === true) {
+			$this->_parentObj->terminateClient($this);
+		}
 	}
 }
