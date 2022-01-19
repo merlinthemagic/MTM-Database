@@ -11,7 +11,6 @@ class Server
 	protected $_dbPort=null;
 	
 	protected $_debug=false;
-	protected $_debugData=array();
 	protected $_exRewrites=array();
 	
 	public function __construct()
@@ -63,14 +62,6 @@ class Server
 	{
 		$this->_debug	= $bool;
 	}
-	public function addDebugData($debugData)
-	{
-		$this->_debugData[]	= $debugData;
-	}
-	public function getDebugData()
-	{
-		return $this->_debugData;
-	}
 	public function setConnectionDetail($username, $password, $port=null)
 	{
 		$this->_dbUsername	= $username;
@@ -100,8 +91,8 @@ class Server
 			}
 
 		} else {
-			$this->addDebugData($e->getMessage() . " - " .$e->getCode());
-			throw $e;
+			//want all errors to be thrown as exceptions rather that PDOExceptions
+			throw new \Exception($e->getMessage(), $e->getCode());
 		}
 	}
 	protected function getAdaptor($connObj)
@@ -117,9 +108,6 @@ class Server
     				
     				if ($this->_dbPort == "") {
     					$this->_dbPort	= 3306;
-    				}
-    				if ($this->getDebug() === true) {
-    					$this->addDebugData("About to setup adaptor for connection id: " . $connObj->getUUID());
     				}
     				//Install PDO classes on CentOS: yum install php-mysqlnd --enablerepo=remi,epel
     				//stop from raising errors
@@ -163,9 +151,6 @@ class Server
     			}
     			
     			if ($e !== null) {
-    			    if ($this->getDebug() === true) {
-    					$this->addDebugData("Adaptor setup resulted in Exception: " . $e->getMessage());
-    				}
     				throw $e;
     			}
     
