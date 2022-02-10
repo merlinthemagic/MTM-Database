@@ -17,11 +17,12 @@ class Server
 	{
 		//default exception rewrites
 		$this->setExceptionRewrite(1062, "Duplicate Entry", 18775);//duplicate in unique index
+		$this->setExceptionRewrite("42S01", "Table or view already exists", 18781);//duplicate in unique index
 	}
 	public function setExceptionRewrite($dbCode, $exMsg="", $exCode=0)
 	{
 		//allows thrown exceptions to be rewritten to fit your needs
-		if (is_int($dbCode) === false) {
+		if (is_int($dbCode) === false && is_string($dbCode) === false) {
 			throw new \Exception("Invalid database error code");
 		} elseif (is_string($exMsg) === false) {
 			throw new \Exception("Invalid exception mesage");
@@ -72,27 +73,31 @@ class Server
 	}
 	protected function exceptionHandler($e)
 	{
-		if ($this->getDebug() === false) {
-			//quash the original exception and issue a generic one
-			//otherwise the exception might leak data database might bubble
-			//e.g. SQLSTATE[HY000] [1044] Access denied for user 'XXXXX'@'%' to database 'XXXXX' - Code: 1044
-			//set the error code so error handlers can still understand what is going on, the dangerous part is in the message
-			//if you dont want to leak the code, rewrite it
-			$dbCode	= "none";
-			if (strpos($e->getMessage(), "violation: 1062 Duplicate entry") !== false) {
-				$dbCode	= 1062;
+		//quash the original exception and issue a generic one
+		//otherwise the exception might leak data database might bubble
+		//e.g. SQLSTATE[HY000] [1044] Access denied for user 'XXXXX'@'%' to database 'XXXXX' - Code: 1044
+		//set the error code so error handlers can still understand what is going on, the dangerous part is in the message
+		//if you dont want to leak the code, rewrite it
+		$dbCode	= $e->getCode();
+		if (strpos($e->getMessage(), "violation: 1062 Duplicate entry") !== false) {
+			$dbCode	= 1062;
+		}
+		if (array_key_exists($dbCode, $this->_exRewrites) === true) {
+			$rwObj	= $this->_exRewrites[$dbCode];
+			throw new \Exception($rwObj->exMsg, $rwObj->exCode);
+			
+		} elseif ($this->getDebug() === true) {
+			//want all errors to be thrown as exceptions rather that PDOExceptions (can use string codes)
+			$errMsg		= $e->getMessage();
+			$errCode	= $e->getCode();
+			if (ctype_digit((string) $errCode) === false) {
+				$errMsg		.= " --- '".$errCode."'";
+				$errCode	= 18622;
 			}
-			if (array_key_exists($dbCode, $this->_exRewrites) === true) {
-				$rwObj	= $this->_exRewrites[$dbCode];
-				throw new \Exception($rwObj->exMsg, $rwObj->exCode);
-			} else {
-				//default
-				throw new \Exception("MAC-DB", 0);
-			}
-
+			throw new \Exception($errMsg, $errCode);
 		} else {
-			//want all errors to be thrown as exceptions rather that PDOExceptions
-			throw new \Exception($e->getMessage(), $e->getCode());
+			//default
+			throw new \Exception("MAC-DB", 0);
 		}
 	}
 	protected function getAdaptor($connObj)
