@@ -14,6 +14,7 @@ class Client
 	public function setParent($dbObj)
 	{
 		$this->_parentObj	= $dbObj;
+		return $this;
 	}
 	public function getParent()
 	{
@@ -22,6 +23,7 @@ class Client
 	public function setDatabaseName($name)
 	{
 		$this->_databaseName	= $name;
+		return $this;
 	}
 	public function getDatabaseName()
 	{
@@ -44,7 +46,8 @@ class Client
 		//$dupAction === false -- duplicate will throw
 		//$dupAction === true -- duplicate will be ignored
 		//$dupAction === array(...) -- duplicate will update
-		//Example: $dupAction[]	= array("column" => $colName, "action" => "if(VALUES(`".$colName."`) IS NOT NULL, VALUES(`".$colName."`), `".$colName."`)");
+		//Example1: $dupAction[]	= array("column" => $colName, "action" => "if(VALUES(`".$colName."`) IS NOT NULL, VALUES(`".$colName."`), `".$colName."`)");
+		//Example2: $dupAction[]	= array("column" => "lastDate", "action" => "2022/05/11 01:13:24"); on duplicate key update column lastDate to 2022/05/11 01:13:24 for this row
 		return $this->getParent()->insert($this, $tableName, $rows, $dupAction);
 	}
 	public function update($tableName, $row, $query=null, $qPs=null)
@@ -90,5 +93,6 @@ class Client
 		if (is_object($this->_parentObj) === true) {
 			$this->_parentObj->terminateClient($this);
 		}
+		return $this;
 	}
 }
