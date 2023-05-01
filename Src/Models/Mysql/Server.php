@@ -1,5 +1,5 @@
 <?php
-//© 2019 Martin Peter Madsen
+//ï¿½ 2019 Martin Peter Madsen
 namespace MTM\Database\Models\Mysql;
 
 class Server
@@ -8,7 +8,7 @@ class Server
 	protected $_hostname=null;
 	protected $_dbUsername=null;
 	protected $_dbPassword=null;
-	protected $_dbPort=null;
+	protected $_dbPort=3306;
 	
 	protected $_debug=false;
 	protected $_exRewrites=array();
@@ -63,7 +63,7 @@ class Server
 	{
 		$this->_debug	= $bool;
 	}
-	public function setConnectionDetail($username, $password, $port=null)
+	public function setConnectionDetail($username, $password, $port=3306)
 	{
 		$this->_dbUsername	= $username;
 		$this->_dbPassword	= $password;
@@ -100,20 +100,17 @@ class Server
 			throw new \Exception("MAC-DB", 0);
 		}
 	}
-	protected function getAdaptor($connObj)
+	protected function getAdaptor($connObj, $resursive=false)
 	{
 	    try {
 	    
-    		if (isset($this->_adaptors[$connObj->getUUID()]) === false) {
+	    	if (array_key_exists($connObj->getUUID(), $this->_adaptors) === false) {
     			if ($connObj->getDatabaseName() === null) {
     				throw new \Exception("Default database name must be set");
     			}
     			$e	= null;
     			try {
     				
-    				if ($this->_dbPort == "") {
-    					$this->_dbPort	= 3306;
-    				}
     				//Install PDO classes on CentOS: yum install php-mysqlnd --enablerepo=remi,epel
     				//stop from raising errors
     				$adaptor = @new \PDO("mysql:host=".$this->_hostname.":".$this->_dbPort.";dbname=".$connObj->getDatabaseName(), $this->_dbUsername, $this->_dbPassword);
@@ -127,6 +124,7 @@ class Server
     				$this->_adaptors[$connObj->getUUID()]["last"]		= time();
     				$this->_adaptors[$connObj->getUUID()]["trans"]		= false;
     				$this->_adaptors[$connObj->getUUID()]["obj"]		= $adaptor;
+    				
     				//defaults
     				$this->_adaptors[$connObj->getUUID()]["maxWait"]		= 28800;
     				$this->_adaptors[$connObj->getUUID()]["maxPacket"]		= 1048576;
@@ -152,6 +150,9 @@ class Server
     						//DNS resolution error
     						$e = new \Exception("Cannot resolve database host: " . $this->_hostname);
     					}
+    					break;
+    					default:
+    						break;
     				}
     			}
     			
@@ -171,7 +172,11 @@ class Server
     				} catch (\PDOException $e) {
     					//no good, redo the adaptor
     					unset($this->_adaptors[$connObj->getUUID()]);
-    					return $this->getAdaptor($connObj);
+    					if ($resursive === false) {
+    						return $this->getAdaptor($connObj, true);
+    					} else {
+    						$this->exceptionHandler($e);
+    					}
     				}
     			}
     		}
@@ -334,7 +339,8 @@ class Server
 						LIMIT 1";
 			}
 
-			$stmt	= $this->getAdaptor($connObj)->prepare($query);
+			$adaptor	= $this->getAdaptor($connObj);
+			$stmt		= $adaptor->prepare($query);
 			if ($qPs === null) {
 				$stmt->execute();
 			} else {
