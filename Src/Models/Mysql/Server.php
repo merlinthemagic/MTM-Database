@@ -4,7 +4,7 @@ namespace MTM\Database\Models\Mysql;
 
 class Server
 {
-	protected $_adaptors=array();
+	protected $_adapObjs=array();
 	protected $_hostname=null;
 	protected $_dbUsername=null;
 	protected $_dbPassword=null;
@@ -71,40 +71,41 @@ class Server
 		
 		return $this;
 	}
-	protected function exceptionHandler($e)
-	{
-		//quash the original exception and issue a generic one
-		//otherwise the exception might leak data database might bubble
-		//e.g. SQLSTATE[HY000] [1044] Access denied for user 'XXXXX'@'%' to database 'XXXXX' - Code: 1044
-		//set the error code so error handlers can still understand what is going on, the dangerous part is in the message
-		//if you dont want to leak the code, rewrite it
-		$dbCode	= $e->getCode();
-		if (strpos($e->getMessage(), "violation: 1062 Duplicate entry") !== false) {
-			$dbCode	= 1062;
-		}
-		if (array_key_exists($dbCode, $this->_exRewrites) === true) {
-			$rwObj	= $this->_exRewrites[$dbCode];
-			throw new \Exception($rwObj->exMsg, $rwObj->exCode);
-			
-		} elseif ($this->getDebug() === true) {
-			//want all errors to be thrown as exceptions rather that PDOExceptions (can use string codes)
-			$errMsg		= $e->getMessage();
-			$errCode	= $e->getCode();
-			if (ctype_digit((string) $errCode) === false) {
-				$errMsg		.= " --- '".$errCode."'";
-				$errCode	= 18622;
-			}
-			throw new \Exception($errMsg, $errCode);
-		} else {
-			//default
-			throw new \Exception("MAC-DB", 0);
-		}
-	}
 	protected function getAdaptor($connObj, $resursive=false)
 	{
 	    try {
-	    
-	    	if (array_key_exists($connObj->getUUID(), $this->_adaptors) === false) {
+
+	    	if (array_key_exists($connObj->getGuid(), $this->_adapObjs) === true) {
+    			
+	    		$adapObj	= $this->_adapObjs[$connObj->getGuid()];
+	    		
+	    		//adaptor exists, lets make sure it is still valid
+	    		$tOut	= ($adapObj->last + $adapObj->maxWait - 5) - time();
+	    		if ($tOut < 0) {
+	    			//our last request was a long time ago
+	    			//so the connection may have timed out, do a more complete test
+	    			try {
+
+	    				//dont use the conn obj as it will end in a endless loop
+	    				$adapObj->adaptor->query("SELECT 1");
+	    				
+	    			} catch (\Exception $e) {
+	    				unset($this->_adapObjs[$connObj->getGuid()]);
+	    				$this->exceptionHandler($e);
+
+	    			} catch (\PDOException $e) {
+	    				//no good, redo the adaptor
+	    				unset($this->_adapObjs[$connObj->getGuid()]);
+	    				if ($resursive === false) {
+	    					return $this->getAdaptor($connObj, true);
+	    				} else {
+	    					$this->exceptionHandler($e);
+	    				}
+	    			}
+	    		}
+    
+    		} else {
+    			
     			if ($connObj->getDatabaseName() === null) {
     				throw new \Exception("Default database name must be set");
     			}
@@ -113,89 +114,78 @@ class Server
     				
     				//Install PDO classes on CentOS: yum install php-mysqlnd --enablerepo=remi,epel
     				//stop from raising errors
-    				$adaptor = @new \PDO("mysql:host=".$this->_hostname.":".$this->_dbPort.";dbname=".$connObj->getDatabaseName(), $this->_dbUsername, $this->_dbPassword);
-    				//use exceptions 
+    				$adaptor = new \PDO("mysql:host=".$this->_hostname.":".$this->_dbPort.";dbname=".$connObj->getDatabaseName(), $this->_dbUsername, $this->_dbPassword);
+    				//use exceptions
     				$adaptor->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
     				$adaptor->setAttribute(\PDO::ATTR_EMULATE_PREPARES, false);
     				
-    				//set a few attributes that will help us maintain the connection
-    				$this->_adaptors[$connObj->getUUID()]				= array();
-    				$this->_adaptors[$connObj->getUUID()]["init"]		= time();
-    				$this->_adaptors[$connObj->getUUID()]["last"]		= time();
-    				$this->_adaptors[$connObj->getUUID()]["trans"]		= false;
-    				$this->_adaptors[$connObj->getUUID()]["obj"]		= $adaptor;
+    				$adapObj				= new \stdClass();
+    				$adapObj->init			= time();
+    				$adapObj->last			= time();
+    				$adapObj->trans			= time();
+    				$adapObj->adaptor		= $adaptor;
+    				$adapObj->maxWait		= 28800;
+    				$adapObj->maxPacket		= 1048576;
+    				$adapObj->maxPrepCount	= 16382;
     				
-    				//defaults
-    				$this->_adaptors[$connObj->getUUID()]["maxWait"]		= 28800;
-    				$this->_adaptors[$connObj->getUUID()]["maxPacket"]		= 1048576;
-    				$this->_adaptors[$connObj->getUUID()]["maxPrepCount"]	= 16382;
-    
-    				$waitRow	= $connObj->getRow('SHOW GLOBAL VARIABLES LIKE "wait_timeout"');
-    				if ($waitRow !== null) {
-    					$this->_adaptors[$connObj->getUUID()]["maxWait"]	= $waitRow["Value"];
+    				
+    				$query		= "SHOW GLOBAL VARIABLES LIKE \"wait_timeout\"";
+    				$stmt		= $adapObj->adaptor->prepare($query);
+    				$stmt->execute();
+    				$row		= $stmt->fetch(\PDO::FETCH_ASSOC);
+    				if ($row !== false) {
+    					$adapObj->maxWait		= intval($row["Value"]);
     				}
-    				$maxPacketRow	= $connObj->getRow('SHOW GLOBAL VARIABLES LIKE "max_allowed_packet"');
-    				if ($maxPacketRow !== null) {
-    					$this->_adaptors[$connObj->getUUID()]["maxPacket"]	= $maxPacketRow["Value"];
+    				$query		= "SHOW GLOBAL VARIABLES LIKE \"max_allowed_packet\"";
+    				$stmt		= $adapObj->adaptor->prepare($query);
+    				$stmt->execute();
+    				$row		= $stmt->fetch(\PDO::FETCH_ASSOC);
+    				if ($row !== false) {
+    					$adapObj->maxPacket		= intval($row["Value"]);
     				}
-    				$maxPrepCount	= $connObj->getCell('SELECT @@max_prepared_stmt_count AS Count');
-    				if ($maxPrepCount !== null) {
-    					$this->_adaptors[$connObj->getUUID()]["maxPrepCount"]	= $maxPrepCount;
+    				
+    				$query		= "SELECT @@max_prepared_stmt_count AS Count";
+    				$stmt		= $adapObj->adaptor->prepare($query);
+    				$stmt->execute();
+    				$row		= $stmt->fetch(\PDO::FETCH_ASSOC);
+    				if ($row !== false) {
+    					$adapObj->maxPrepCount	= intval($row["Count"]);
     				}
-    
+    				
+    				$this->_adapObjs[$connObj->getGuid()]	= $adapObj;
+    				
     			} catch (\Exception $e) {
     				switch ($e->getCode()) {
-    				case 2002:
-    					if (strpos(strtolower($e->getMessage()), "getaddrinfo failed") !== false) {
-    						//DNS resolution error
-    						$e = new \Exception("Cannot resolve database host: " . $this->_hostname);
-    					}
-    					break;
-    					default:
+    					case 2002:
+    						if (strpos(strtolower($e->getMessage()), "getaddrinfo failed") !== false) {
+    							//DNS resolution error
+    							throw new \Exception("Cannot resolve database host: " . $this->_hostname);
+    						} else {
+    							throw $e;
+    						}
     						break;
+    					default:
+    						throw $e;
     				}
+    			} catch (\PDOException $e) {
+    				$this->exceptionHandler($e);
     			}
-    			
-    			if ($e !== null) {
-    				throw $e;
-    			}
-    
-    		} else {
-    			//adaptor exists, lets make sure it is still valid
-    			$tOut	= ($this->_adaptors[$connObj->getUUID()]["last"] + $this->_adaptors[$connObj->getUUID()]["maxWait"] - 5) - time();
-    			if ($tOut < 0) {
-    				//our last request was a long time ago 
-    				//so the connection may have timed out, do a more complete test
-    				try {
-    					//dont use the conn obj as it will end in a endless loop
-    					$this->_adaptors[$connObj->getUUID()]["obj"]->query("SELECT 1");
-    				} catch (\PDOException $e) {
-    					//no good, redo the adaptor
-    					unset($this->_adaptors[$connObj->getUUID()]);
-    					if ($resursive === false) {
-    						return $this->getAdaptor($connObj, true);
-    					} else {
-    						$this->exceptionHandler($e);
-    					}
-    				}
-    			}
-    		}
-    		
-    		//update last get time
-    		$this->_adaptors[$connObj->getUUID()]["last"]	= time();
-    		return $this->_adaptors[$connObj->getUUID()]["obj"];
+    		} 
+    		return $adapObj;
     		
 	    } catch (\Exception $e) {
 	        $this->exceptionHandler($e);
+	    } catch (\PDOException $e) {
+	    	$this->exceptionHandler($e);
 	    }
 	}
 	public function terminateClient($connObj)
 	{
-		if (array_key_exists($connObj->getUUID(), $this->_adaptors) === true) {
-			$adaptor	= $this->getAdaptor($connObj);
-			unset($this->_adaptors[$connObj->getUUID()]);
+		if (array_key_exists($connObj->getGuid(), $this->_adapObjs) === true) {
+			$adapObj	= $this->_adapObjs[$connObj->getGuid()];
+			unset($this->_adapObjs[$connObj->getGuid()]);
 			try {
-				$adaptor->query("KILL CONNECTION_ID()");
+				$adapObj->adaptor->query("KILL CONNECTION_ID()");
 			} catch (\Exception $e) {
 				//nothing, its just an interupted execution (pid went away)
 			}
@@ -204,113 +194,25 @@ class Server
 	}
 	public function getMaxPacket($connObj)
 	{
-		$this->getAdaptor($connObj);
-		return $this->_adaptors[$connObj->getUUID()]["maxPacket"];
+		return $this->getAdaptor($connObj)->maxPacket;
 	}
 	public function getMaxPreparedCount($connObj)
 	{
-		$this->getAdaptor($connObj);
-		return $this->_adaptors[$connObj->getUUID()]["maxPrepCount"];
-	}
-	public function setSlowLog($connObj, $enabled, $time, $filePath)
-	{
-	    try {
-    		
-	        $sqlQ	= "SHOW GLOBAL VARIABLES LIKE '%_query_%'";
-    		$rows	= $connObj->getAll($sqlQ);
-    		
-    		if ($rows !== null) {
-    			
-    			$curFilePath	= null;
-    			$curEnabled		= null;
-    			$curTime		= null;
-    			
-    			foreach ($rows as $row) {
-    				$name	= strtolower($row["Variable_name"]);
-    				$value	= $row["Value"];
-    				if ($name == "slow_query_log") {
-    					if (strtolower($value) == "off") {
-    						$curEnabled	= false;
-    					} else {
-    						$curEnabled	= true;
-    					}
-    				} elseif ($name == "slow_query_log_file") {
-    					$curFilePath	= $value;
-    				} elseif ($name == "long_query_time") {
-    					$curTime	= $value;
-    				}
-    			}
-    
-    			if ($curFilePath !== null && $curEnabled !== null && $curTime !== null) {
-    
-    				//these will throw if you dont have one of the SUPER privileges
-    				
-    				if ($filePath != "" && $curFilePath != $filePath) {
-    					$sqlQ	= "SET GLOBAL slow_query_log_file = '".$filePath."'";
-    					$connObj->getCell($sqlQ);
-    				}
-    				if ($curTime != $time) {
-    					$sqlQ	= "SET GLOBAL long_query_time = '".$time."'";
-    					$connObj->getCell($sqlQ);
-    				}
-    				if ($curEnabled === false && $enabled === true) {
-    					$sqlQ	= "SET GLOBAL slow_query_log = 'ON'";
-    					$connObj->getCell($sqlQ);
-    				} elseif ($curEnabled === true && $enabled === false) {
-    					$sqlQ	= "SET GLOBAL slow_query_log = 'OFF'";
-    					$connObj->getCell($sqlQ);
-    				}
-    				
-    				return;
-    			}
-    		}
-    
-    		//somehow we failed
-    		throw new \Exception("Failed to set slowlog");
-    		
-	    } catch (\Exception $e) {
-	        $this->exceptionHandler($e);
-	    }
+		return $this->getAdaptor($connObj)->maxPrepCount;
 	}
 	public function getTransaction($connObj)
 	{
-		return $this->_adaptors[$connObj->getUUID()]["trans"];
-	}
-	public function startTransaction($connObj)
-	{
-		try {
-			
-			if ($this->getTransaction($connObj) === false) {
-				$this->getAdaptor($connObj)->beginTransaction();
-				$this->_adaptors[$connObj->getUUID()]["trans"]	= true;
-			}
-			
-		} catch(\Exception $e) {
-		    $this->exceptionHandler($e);
-		}
-	}
-	public function commitTransaction($connObj)
-	{
-		try {
-			
-			if ($this->getTransaction($connObj) === true) {
-				$this->getAdaptor($connObj)->commit();
-				$this->_adaptors[$connObj->getUUID()]["trans"]	= false;
-			} else {
-				throw new \Exception("Cannot commit, transaction not started");
-			}
-			
-		} catch(\Exception $e) {
-		    $this->exceptionHandler($e);
-		}
+		return $this->getAdaptor($connObj)->trans;
 	}
 	
 	//Select
 	public function getAll($connObj, $query, $qPs)
 	{
 		try {
-				
-			$stmt	= $this->getAdaptor($connObj)->prepare($query);
+
+			$adapObj		= $this->getAdaptor($connObj);
+			$adapObj->last	= time();
+			$stmt			= $adapObj->adaptor->prepare($query);
 			if ($qPs === null) {
 				$stmt->execute();
 			} else {
@@ -331,16 +233,17 @@ class Server
 	public function getRow($connObj, $query, $qPs)
 	{
 		try {
-			$query	= trim($query);
+			
+			$adapObj	= $this->getAdaptor($connObj);
+			$query		= trim($query);
 			if (preg_match("/^select/i", $query) == 1 && preg_match("/limit/i", $query) == 0) {
 				//select query does not have a limit in it get row implies a single return
 				//adding limit 1 when retriving a single row is faster
 				$query	.= "
 						LIMIT 1";
 			}
-
-			$adaptor	= $this->getAdaptor($connObj);
-			$stmt		= $adaptor->prepare($query);
+			$adapObj->last	= time();
+			$stmt			= $adapObj->adaptor->prepare($query);
 			if ($qPs === null) {
 				$stmt->execute();
 			} else {
@@ -373,6 +276,9 @@ class Server
 	public function insert($connObj, $tableName, &$rows, $dupAction)
 	{
 		try {
+			
+			$adapObj	= $this->getAdaptor($connObj);
+			
 			//prep the rows
 			if (is_array($rows) === true) {
 				if (is_array(current($rows)) === false) {
@@ -475,13 +381,14 @@ class Server
 						}
 						
 						foreach ($queries as $aQuery) {
-							$query	= $baseQuery . implode(", ", $aQuery["rValues"]) . $dubQuery;
-							$stmt	= $this->getAdaptor($connObj)->prepare($query);
+							$query			= $baseQuery . implode(", ", $aQuery["rValues"]) . $dubQuery;
+							$adapObj->last	= time();
+							$stmt			= $adapObj->adaptor->prepare($query);
 							$stmt->execute($aQuery["iValues"]);
 						}
 						
 						if ($rowCount == 1) {
-							return $this->getAdaptor($connObj)->lastInsertId();
+							return $adapObj->adaptor->lastInsertId();
 						} else {
 							return;
 						}
@@ -504,6 +411,8 @@ class Server
 	public function update($connObj, $tableName, $row, $query, $qPs)
 	{
 		try {
+			
+			$adapObj	= $this->getAdaptor($connObj);
 			
 			if (is_array($row) === true) {
 				$colCount	= count($row);
@@ -545,7 +454,8 @@ class Server
 						if ($query !== null) {
 							$update	.= " WHERE " . $query;
 						}
-						$stmt	= $this->getAdaptor($connObj)->prepare($update);
+						$adapObj->last	= time();
+						$stmt			= $adapObj->adaptor->prepare($update);
 						$stmt->execute($qPs);
 
 					} else {
@@ -567,12 +477,14 @@ class Server
 	{
 		try {
 			
+			$adapObj	= $this->getAdaptor($connObj);
 			$delete	= "DELETE FROM `".$connObj->getDatabaseName(). "`.`" . $tableName . "`";
 			if ($query !== null) {
 				$delete	.= " WHERE " . $query;
 			}
 	
-			$stmt	= $this->getAdaptor($connObj)->prepare($delete);
+			$adapObj->last	= time();
+			$stmt			= $adapObj->adaptor->prepare($delete);
 			if ($qPs === null) {
 				$stmt->execute();
 			} else {
@@ -582,6 +494,35 @@ class Server
 
 		} catch(\Exception $e) {
 		    $this->exceptionHandler($e);
+		}
+	}
+	protected function exceptionHandler($e)
+	{
+		//quash the original exception and issue a generic one
+		//otherwise the exception might leak data database might bubble
+		//e.g. SQLSTATE[HY000] [1044] Access denied for user 'XXXXX'@'%' to database 'XXXXX' - Code: 1044
+		//set the error code so error handlers can still understand what is going on, the dangerous part is in the message
+		//if you dont want to leak the code, rewrite it
+		$dbCode	= $e->getCode();
+		if (strpos($e->getMessage(), "violation: 1062 Duplicate entry") !== false) {
+			$dbCode	= 1062;
+		}
+		if (array_key_exists($dbCode, $this->_exRewrites) === true) {
+			$rwObj	= $this->_exRewrites[$dbCode];
+			throw new \Exception($rwObj->exMsg, $rwObj->exCode);
+			
+		} elseif ($this->getDebug() === true) {
+			//want all errors to be thrown as exceptions rather that PDOExceptions (can use string codes)
+			$errMsg		= $e->getMessage();
+			$errCode	= $e->getCode();
+			if (ctype_digit((string) $errCode) === false) {
+				$errMsg		.= " --- '".$errCode."'";
+				$errCode	= 18622;
+			}
+			throw new \Exception($errMsg, $errCode);
+		} else {
+			//default
+			throw new \Exception("MAC-DB", 0);
 		}
 	}
 }

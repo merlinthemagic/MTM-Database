@@ -1,15 +1,23 @@
 <?php
-//© 2019 Martin Peter Madsen
+//ï¿½ 2019 Martin Peter Madsen
 namespace MTM\Database\Models\Mysql;
 
 class Client
 {
 	protected $_parentObj=null;
-	protected $_connUUID=null;
+	protected $_guid=null;
 	
+	public function __construct()
+	{
+		$this->_guid		= uniqid("", true);
+	}
 	public function __destruct()
 	{
 		$this->terminate();
+	}
+	public function getGuid()
+	{
+		return $this->_guid;
 	}
 	public function setParent($dbObj)
 	{
@@ -81,13 +89,7 @@ class Client
 	{
 		return $this->getParent()->setSlowLog($this, $enabled, $time, $filePath);
 	}
-	public function getUUID()
-	{
-		if ($this->_connUUID === null) {
-			$this->_connUUID		= uniqid("", true);
-		}
-		return $this->_connUUID;
-	}
+	
 	public function terminate()
 	{
 		if (is_object($this->_parentObj) === true) {
