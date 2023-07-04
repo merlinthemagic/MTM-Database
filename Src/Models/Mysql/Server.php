@@ -80,8 +80,8 @@ class Server
 	    		$adapObj	= $this->_adapObjs[$connObj->getGuid()];
 	    		
 	    		//adaptor exists, lets make sure it is still valid
-	    		$tOut	= ($adapObj->last + $adapObj->maxWait - 5) - time();
-	    		if ($tOut < 0) {
+	    		$tOut	= ($adapObj->last + $adapObj->maxWait - 5);
+	    		if ($tOut < time()) {
 	    			//our last request was a long time ago
 	    			//so the connection may have timed out, do a more complete test
 	    			try {
@@ -234,8 +234,9 @@ class Server
 	{
 		try {
 			
-			$adapObj	= $this->getAdaptor($connObj);
-			$query		= trim($query);
+			$adapObj		= $this->getAdaptor($connObj);
+			$adapObj->last	= time();
+			$query			= trim($query);
 			if (preg_match("/^select/i", $query) == 1 && preg_match("/limit/i", $query) == 0) {
 				//select query does not have a limit in it get row implies a single return
 				//adding limit 1 when retriving a single row is faster
@@ -277,8 +278,8 @@ class Server
 	{
 		try {
 			
-			$adapObj	= $this->getAdaptor($connObj);
-			
+			$adapObj		= $this->getAdaptor($connObj);
+			$adapObj->last	= time();
 			//prep the rows
 			if (is_array($rows) === true) {
 				if (is_array(current($rows)) === false) {
@@ -412,8 +413,8 @@ class Server
 	{
 		try {
 			
-			$adapObj	= $this->getAdaptor($connObj);
-			
+			$adapObj		= $this->getAdaptor($connObj);
+			$adapObj->last	= time();
 			if (is_array($row) === true) {
 				$colCount	= count($row);
 				if ($colCount > 0) {
@@ -477,7 +478,8 @@ class Server
 	{
 		try {
 			
-			$adapObj	= $this->getAdaptor($connObj);
+			$adapObj		= $this->getAdaptor($connObj);
+			$adapObj->last	= time();
 			$delete	= "DELETE FROM `".$connObj->getDatabaseName(). "`.`" . $tableName . "`";
 			if ($query !== null) {
 				$delete	.= " WHERE " . $query;
