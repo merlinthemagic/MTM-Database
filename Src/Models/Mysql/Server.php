@@ -12,6 +12,7 @@ class Server
 	
 	protected $_debug=false;
 	protected $_exRewrites=array();
+	protected $_waitTimeoutErr=false;
 	
 	public function __construct()
 	{
@@ -71,6 +72,11 @@ class Server
 		
 		return $this;
 	}
+	public function waitTimeoutHandler($errno, $errstr, $errfile=null, $errline=null)
+	{
+		$this->_waitTimeoutErr	= true;
+		return $this;
+	}
 	protected function getAdaptor($connObj, $resursive=false)
 	{
 	    try {
@@ -84,17 +90,40 @@ class Server
 	    		if ($tOut < time()) {
 	    			//our last request was a long time ago
 	    			//so the connection may have timed out, do a more complete test
+	    			
 	    			try {
-
-	    				//dont use the conn obj as it will end in a endless loop
-	    				$adapObj->adaptor->query("SELECT 1");
 	    				
+	    				set_error_handler(array($this, "waitTimeoutHandler"));
+	    				//dont use the conn obj as it will end in a endless loop
+	    				@$adapObj->adaptor->query("SELECT 1");
+	    				
+	    				restore_error_handler();
+	    				
+	    				if ($this->_waitTimeoutErr === true) {
+							//sometimes a timeout error does not result in an exception
+							//rather we get a packet out of order warning
+	    					//PHP Warning:  Packets out of order. Expected 1 received 0. Packet size=145
+	    					$this->_waitTimeoutErr	= false;
+	    					unset($this->_adapObjs[$connObj->getGuid()]);
+	    					if ($resursive === false) {
+	    						return $this->getAdaptor($connObj, true);
+	    					} else {
+	    						$this->exceptionHandler($e);
+	    					}
+	    				}
+
 	    			} catch (\Exception $e) {
+	    				
+	    				//catch timeout errors like: SQLSTATE[HY000]: General error: 2006 MySQL server has gone away HY000
+	    				$this->_waitTimeoutErr	= false;
+	    				restore_error_handler();
 	    				unset($this->_adapObjs[$connObj->getGuid()]);
 	    				$this->exceptionHandler($e);
 
 	    			} catch (\PDOException $e) {
 	    				//no good, redo the adaptor
+	    				$this->_waitTimeoutErr	= false;
+	    				restore_error_handler();
 	    				unset($this->_adapObjs[$connObj->getGuid()]);
 	    				if ($resursive === false) {
 	    					return $this->getAdaptor($connObj, true);
@@ -127,16 +156,16 @@ class Server
     				$adapObj->maxWait		= 28800;
     				$adapObj->maxPacket		= 1048576;
     				$adapObj->maxPrepCount	= 16382;
-    				
-    				
-    				$query		= "SHOW GLOBAL VARIABLES LIKE \"wait_timeout\"";
+
+    				$query		= "SHOW SESSION VARIABLES LIKE \"wait_timeout\"";
     				$stmt		= $adapObj->adaptor->prepare($query);
     				$stmt->execute();
     				$row		= $stmt->fetch(\PDO::FETCH_ASSOC);
     				if ($row !== false) {
     					$adapObj->maxWait		= intval($row["Value"]);
     				}
-    				$query		= "SHOW GLOBAL VARIABLES LIKE \"max_allowed_packet\"";
+
+    				$query		= "SHOW SESSION VARIABLES LIKE \"max_allowed_packet\"";
     				$stmt		= $adapObj->adaptor->prepare($query);
     				$stmt->execute();
     				$row		= $stmt->fetch(\PDO::FETCH_ASSOC);
