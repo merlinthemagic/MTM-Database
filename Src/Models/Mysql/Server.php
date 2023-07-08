@@ -18,7 +18,7 @@ class Server
 	{
 		//default exception rewrites
 		$this->setExceptionRewrite(1062, "Duplicate Entry", 18775);//duplicate in unique index
-		$this->setExceptionRewrite("42S01", "Table or view already exists", 18781);//duplicate in unique index
+		$this->setExceptionRewrite("42S01", "Table or view already exists", 18781);//duplicate table
 	}
 	public function setExceptionRewrite($dbCode, $exMsg="", $exCode=0)
 	{
@@ -96,7 +96,6 @@ class Server
 	    				set_error_handler(array($this, "waitTimeoutHandler"));
 	    				//dont use the conn obj as it will end in a endless loop
 	    				@$adapObj->adaptor->query("SELECT 1");
-	    				
 	    				restore_error_handler();
 	    				
 	    				if ($this->_waitTimeoutErr === true) {
@@ -114,21 +113,36 @@ class Server
 
 	    			} catch (\Exception $e) {
 	    				
-	    				//catch timeout errors like: SQLSTATE[HY000]: General error: 2006 MySQL server has gone away HY000
 	    				$this->_waitTimeoutErr	= false;
 	    				restore_error_handler();
 	    				unset($this->_adapObjs[$connObj->getGuid()]);
-	    				$this->exceptionHandler($e);
+
+	    				switch ($e->getCode()) {
+	    					case "HY000":
+	    						//catch timeout errors: SQLSTATE[HY000]: General error: 2006 MySQL server has gone away HY000
+	    						if ($resursive === false) {
+	    							return $this->getAdaptor($connObj, true);
+	    						} else {
+	    							$this->exceptionHandler($e);
+	    						}
+	    						break;
+	    					default:
+	    						$this->exceptionHandler($e);
+	    				}
 
 	    			} catch (\PDOException $e) {
 	    				//no good, redo the adaptor
 	    				$this->_waitTimeoutErr	= false;
 	    				restore_error_handler();
 	    				unset($this->_adapObjs[$connObj->getGuid()]);
-	    				if ($resursive === false) {
-	    					return $this->getAdaptor($connObj, true);
-	    				} else {
-	    					$this->exceptionHandler($e);
+	    				
+	    				switch ($e->getCode()) {
+	    					default:
+	    						if ($resursive === false) {
+	    							return $this->getAdaptor($connObj, true);
+	    						} else {
+	    							$this->exceptionHandler($e);
+	    						}
 	    				}
 	    			}
 	    		}
@@ -157,6 +171,9 @@ class Server
     				$adapObj->maxPacket		= 1048576;
     				$adapObj->maxPrepCount	= 16382;
 
+    				//test renewing the adaptor
+//     				$adapObj->adaptor->query("SET SESSION wait_timeout = 3");
+    				
     				$query		= "SHOW SESSION VARIABLES LIKE \"wait_timeout\"";
     				$stmt		= $adapObj->adaptor->prepare($query);
     				$stmt->execute();
@@ -214,7 +231,7 @@ class Server
 			$adapObj	= $this->_adapObjs[$connObj->getGuid()];
 			unset($this->_adapObjs[$connObj->getGuid()]);
 			try {
-				$adapObj->adaptor->query("KILL CONNECTION_ID()");
+				@$adapObj->adaptor->query("KILL CONNECTION_ID()");
 			} catch (\Exception $e) {
 				//nothing, its just an interupted execution (pid went away)
 			}
@@ -537,6 +554,8 @@ class Server
 		$dbCode	= $e->getCode();
 		if (strpos($e->getMessage(), "violation: 1062 Duplicate entry") !== false) {
 			$dbCode	= 1062;
+		} elseif (strpos($e->getMessage(), "General error: 2006 MySQL server has gone away") !== false) {
+			$dbCode	= 2006;
 		}
 		if (array_key_exists($dbCode, $this->_exRewrites) === true) {
 			$rwObj	= $this->_exRewrites[$dbCode];
