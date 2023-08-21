@@ -1,5 +1,5 @@
 <?php
-//© 2019 Martin Peter Madsen
+//ï¿½ 2019 Martin Peter Madsen
 namespace MTM\Database\Factories;
 
 class Mysql extends Base
@@ -8,7 +8,7 @@ class Mysql extends Base
 	{
 		$hash	= hash("sha256", $host . $user . $pass . $port);
 		if (array_key_exists($hash, $this->_cStore) === false) {
-			$rObj	= new \MTM\Database\Models\Mysql\Server();
+			$rObj	= new \MTM\Database\Models\Mysql\Server\Zulu();
 			if ($host !== null) {
 				$rObj->setHostname($host);
 			}
