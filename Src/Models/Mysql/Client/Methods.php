@@ -6,6 +6,7 @@ abstract class Methods extends Alpha
 {
 	protected $_parentObj=null;
 	protected $_guid=null;
+	protected $_databaseName=null;
 	
 	public function __construct()
 	{
