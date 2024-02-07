@@ -293,7 +293,7 @@ abstract class Methods extends Alpha
 							$colNames[] 		= $colName;
 							$colPos[$colName] 	= $i++;
 							$qMarks[]			= "?";
-							$rowSize			+= strlen($colVal);
+							$rowSize			+= strlen((string) $colVal);
 						}
 						
 						$queries		= array();
