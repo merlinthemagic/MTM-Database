@@ -6,7 +6,10 @@ abstract class Methods extends Alpha
 {
 	protected $_adapObjs=array();
 	protected $_waitTimeoutErr=false;
-	
+	protected $_connTimeout=60;
+	protected $_termCbs=array();
+	protected $_exCb=null;
+
 	public function getNewClient($dbName)
 	{
 		$rObj	= new \MTM\Database\Models\Mysql\Client\Zulu();
@@ -19,6 +22,11 @@ abstract class Methods extends Alpha
 	public function waitTimeoutHandler($errno, $errstr, $errfile=null, $errline=null)
 	{
 		$this->_waitTimeoutErr	= true;
+		return $this;
+	}
+	public function setConnectTimeout($secs)
+	{
+		$this->_connTimeout	= $secs;
 		return $this;
 	}
 	protected function getAdaptor($connObj, $resursive=false)
@@ -100,12 +108,15 @@ abstract class Methods extends Alpha
 				try {
 					
 					//Install PDO classes on CentOS: yum install php-mysqlnd --enablerepo=remi,epel
-					//stop from raising errors
-					$adaptor = new \PDO("mysql:host=".$this->_hostname.":".$this->_dbPort.";dbname=".$connObj->getDatabaseName(), $this->_dbUsername, $this->_dbPassword);
-					//use exceptions
-					$adaptor->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
-					$adaptor->setAttribute(\PDO::ATTR_EMULATE_PREPARES, false);
+					//stop from raising errors, throw exceptions in stead
+					$opts = array(
+							\PDO::ATTR_ERRMODE	 				=> \PDO::ERRMODE_EXCEPTION,
+							\PDO::ATTR_TIMEOUT					=> $this->_connTimeout,
+							\PDO::ATTR_EMULATE_PREPARES		 	=> false
+					);
 					
+					$adaptor = new \PDO("mysql:host=".$this->_hostname.":".$this->_dbPort.";dbname=".$connObj->getDatabaseName(), $this->_dbUsername, $this->_dbPassword, $opts);
+
 					$adapObj				= new \stdClass();
 					$adapObj->init			= time();
 					$adapObj->last			= time();
@@ -495,31 +506,47 @@ abstract class Methods extends Alpha
 		//e.g. SQLSTATE[HY000] [1044] Access denied for user 'XXXXX'@'%' to database 'XXXXX' - Code: 1044
 		//set the error code so error handlers can still understand what is going on, the dangerous part is in the message
 		//if you dont want to leak the code, rewrite it
-		$dbCode	= $e->getCode();
-		if (strpos($e->getMessage(), "violation: 1062 Duplicate entry") !== false) {
-			$dbCode	= 1062;
-		} elseif (strpos($e->getMessage(), "General error: 2006 MySQL server has gone away") !== false) {
-			$dbCode	= 2006;
-		} elseif (strpos($e->getMessage(), "General error: 1290 The MySQL server is running with the --read-only option so it cannot execute this statement") !== false) {
-			$dbCode	= 1290;
-		}
 		
-		if (array_key_exists($dbCode, $this->_exRewrites) === true) {
-			$rwObj	= $this->_exRewrites[$dbCode];
-			throw new \Exception($rwObj->exMsg, $rwObj->exCode);
-			
-		} elseif ($this->getDebug() === true) {
-			//want all errors to be thrown as exceptions rather that PDOExceptions (can use string codes)
-			$errMsg		= $e->getMessage();
-			$errCode	= $e->getCode();
-			if (ctype_digit((string) $errCode) === false) {
-				$errMsg		.= " --- '".$errCode."'";
-				$errCode	= 18622;
+		try {
+		
+			$dbCode	= $e->getCode();
+			if (strpos($e->getMessage(), "violation: 1062 Duplicate entry") !== false) {
+				$dbCode	= 1062;
+			} elseif (strpos($e->getMessage(), "General error: 2006 MySQL server has gone away") !== false) {
+				$dbCode	= 2006;
+			} elseif (strpos($e->getMessage(), "General error: 1290 The MySQL server is running with the --read-only option so it cannot execute this statement") !== false) {
+				$dbCode	= 1290;
 			}
-			throw new \Exception($errMsg, $errCode);
-		} else {
-			//default
-			throw new \Exception("MAC-DB", 0);
+			
+			if (array_key_exists($dbCode, $this->_exRewrites) === true) {
+				$rwObj	= $this->_exRewrites[$dbCode];
+				throw new \Exception($rwObj->exMsg, $rwObj->exCode);
+				
+			} elseif ($this->getDebug() === true) {
+				//want all errors to be thrown as exceptions rather that PDOExceptions (can use string codes)
+				$errMsg		= $e->getMessage();
+				$errCode	= $e->getCode();
+				if (ctype_digit((string) $errCode) === false) {
+					$errMsg		.= " --- '".$errCode."'";
+					$errCode	= 18622;
+				}
+				throw new \Exception($errMsg, $errCode);
+			} else {
+				//default
+				throw new \Exception("MAC-DB", 0);
+			}
+			
+		} catch(\Exception $e2) {
+			$reThrow	= true;
+			if ($this->_exCb !== null) {
+				try {
+					$reThrow	= call_user_func_array($this->_exCb, array($this));
+				} catch(\Exception $e3) {
+				}
+			}
+			if ($reThrow === true) {
+				throw $e2;
+			}
 		}
 	}
 }

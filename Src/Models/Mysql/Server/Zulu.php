@@ -4,8 +4,6 @@ namespace MTM\Database\Models\Mysql\Server;
 
 class Zulu extends Methods
 {
-	protected $_termCbs=array();
-	
 	public function addTerminationCb($obj, $method)
 	{
 		if (
@@ -28,5 +26,22 @@ class Zulu extends Methods
 			}
 		}
 		$this->_termCbs			= array();
+	}
+	public function setExceptionCb($obj, $method)
+	{
+		//on exception this object will be called
+		if ($obj === null && $method === null) {
+			$this->_termCb		= null;
+		} elseif (is_object($obj) === false) {
+			throw new \Exception("Invalid input, object expected", 19847);
+		} elseif (is_string($method) === false) {
+			throw new \Exception("Invalid input, string expected", 19848);
+		} elseif (method_exists($obj, $method) === false) {
+			throw new \Exception("Invalid input, object does not contain method", 19849);
+		} else {
+			$this->_exCb		= array($obj, $method);
+		}
+		
+		return $this;
 	}
 }

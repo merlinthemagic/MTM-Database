@@ -23,6 +23,7 @@ abstract class Alpha extends \MTM\Utilities\Tools\Validations\V1
 		$this->setExceptionRewrite("2006", "Database server has gone away", 18790);//MySQL server has gone away
 		$this->setExceptionRewrite("08S01", "Database server shutdown in progress", 18791);//MySQL server is going away
 		$this->setExceptionRewrite("1290", "Database server is read only", 18792);//MySQL server is going away
+		$this->setExceptionRewrite("2002", "Database server connect time out", 18793);//MySQL server is going away
 	}
 	public function setHostname($hostname)
 	{
