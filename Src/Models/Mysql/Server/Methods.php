@@ -540,7 +540,7 @@ abstract class Methods extends Alpha
 			$reThrow	= true;
 			if ($this->_exCb !== null) {
 				try {
-					$reThrow	= call_user_func_array($this->_exCb, array($this));
+					$reThrow	= call_user_func_array($this->_exCb, array($this, $e2));
 				} catch(\Exception $e3) {
 				}
 			}
