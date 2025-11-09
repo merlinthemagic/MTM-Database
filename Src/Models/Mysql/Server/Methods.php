@@ -102,7 +102,7 @@ abstract class Methods extends Alpha
 			} else {
 				
 				if ($connObj->getDatabaseName() === null) {
-					throw new \Exception("Default database name must be set");
+					throw new \Exception("Default database name must be set", 1111);
 				}
 				$e	= null;
 				try {
@@ -115,7 +115,7 @@ abstract class Methods extends Alpha
 							\PDO::ATTR_EMULATE_PREPARES		 	=> false
 					);
 					
-					$adaptor = new \PDO("mysql:host=".$this->_hostname.":".$this->_dbPort.";dbname=".$connObj->getDatabaseName(), $this->_dbUsername, $this->_dbPassword, $opts);
+					$adaptor 				= new \PDO("mysql:host=".$this->_hostname.":".$this->_dbPort.";dbname=".$connObj->getDatabaseName(), $this->_dbUsername, $this->_dbPassword, $opts);
 
 					$adapObj				= new \stdClass();
 					$adapObj->init			= time();
