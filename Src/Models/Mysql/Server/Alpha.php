@@ -27,6 +27,7 @@ abstract class Alpha extends \MTM\Utilities\Tools\Validations\V1
 	}
 	public function setHostname($hostname)
 	{
+		$this->isStrMax($hostname, 255, true);
 		$this->_hostname	= $hostname;
 	}
 	public function getHostname()
@@ -43,6 +44,9 @@ abstract class Alpha extends \MTM\Utilities\Tools\Validations\V1
 	}
 	public function setConnectionDetail($username, $password, $port=3306)
 	{
+		$this->isStr($username, true);
+		$this->isStr($password, true);
+		$this->isint($port, true);
 		$this->_dbUsername	= $username;
 		$this->_dbPassword	= $password;
 		$this->_dbPort		= $port;

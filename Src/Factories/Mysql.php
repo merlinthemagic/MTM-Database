@@ -4,20 +4,13 @@ namespace MTM\Database\Factories;
 
 class Mysql extends Base
 {
-	public function getConnection($host=null, $user=null, $pass=null, $port=null)
+	public function getConnection($host, $user, $pass, $port)
 	{
-		$hash	= hash("sha256", $host . $user . $pass . $port);
-		if (array_key_exists($hash, $this->_cStore) === false) {
-			$rObj	= new \MTM\Database\Models\Mysql\Server\Zulu();
-			if ($host !== null) {
-				$rObj->setHostname($host);
-			}
-			if ($user !== null && $pass !== null) {
-				$rObj->setConnectionDetail($user, $pass, $port);
-			}
-			$this->_cStore[$hash]	= $rObj;
-		}
-		return $this->_cStore[$hash];
+		$rObj	= new \MTM\Database\Models\Mysql\Server\Zulu();
+		$rObj->setHostname($host);
+		$rObj->setConnectionDetail($user, $pass, $port);
+		
+		return $rObj;
 	}
 	public function getTool()
 	{
