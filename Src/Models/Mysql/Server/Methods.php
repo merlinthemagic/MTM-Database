@@ -531,6 +531,7 @@ abstract class Methods extends Alpha
 					$errCode	= 18622;
 				}
 				throw new \Exception($errMsg, $errCode);
+				
 			} else {
 				//default
 				throw new \Exception("MAC-DB", 0);

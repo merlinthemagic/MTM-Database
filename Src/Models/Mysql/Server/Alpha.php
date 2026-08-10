@@ -18,6 +18,7 @@ abstract class Alpha extends \MTM\Utilities\Tools\Validations\V1
 		//default exception rewrites
 		$this->setExceptionRewrite("1062", "Duplicate Entry", 18775);//duplicate in unique index
 		$this->setExceptionRewrite("42S01", "Table or view already exists", 18781);//duplicate table
+		$this->setExceptionRewrite("42S02", "Table or view does not exist", 18782);//table does not exist
 		$this->setExceptionRewrite("40000", "Transaction rollback", 18786);//rollback
 		
 		$this->setExceptionRewrite("2006", "Database server has gone away", 18790);//MySQL server has gone away
@@ -41,6 +42,7 @@ abstract class Alpha extends \MTM\Utilities\Tools\Validations\V1
 	public function setDebug($bool)
 	{
 		$this->_debug	= $bool;
+		return $this;
 	}
 	public function setConnectionDetail($username, $password, $port=3306)
 	{
